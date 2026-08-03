@@ -25,7 +25,10 @@ services:
       - key: AUTH_DEV_PARTNER_EMAIL
         value: dev@s32.com
       - key: CORS_ORIGINS
-        sync: false # set to your Vercel URL(s), comma-separated
+        # Any https://*.vercel.app is also allowed in code via regex.
+        # Set your production Vercel URL here too, e.g. https://s32sourcing-qf3f.vercel.app
+        value: "http://localhost:3000"
+
       - key: EXA_API_KEY
         sync: false
       - key: GITHUB_TOKEN

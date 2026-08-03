@@ -21,9 +21,12 @@ app = FastAPI(
 
 _cors = settings.cors_origin_list
 _allow_all = _cors == ["*"]
+
+# Always allow Vercel preview + production hosts; plus any explicit CORS_ORIGINS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if _allow_all else _cors,
+    allow_origins=["*"] if _allow_all else (_cors or ["http://localhost:3000"]),
+    allow_origin_regex=None if _allow_all else r"https://.*\.vercel\.app",
     allow_credentials=not _allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,6 +45,8 @@ def on_startup() -> None:
         )
     elif not settings.clerk_secret_key:
         log.warning("CLERK_SECRET_KEY is empty — authenticated API routes will fail")
+
+    log.info("CORS origins=%s vercel_regex=%s", _cors, not _allow_all)
 
     configured = [
         name
