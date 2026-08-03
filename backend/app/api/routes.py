@@ -130,6 +130,8 @@ def create_thesis(
     partner: Partner = Depends(get_current_partner),
     db: Session = Depends(get_db),
 ) -> ThesisConfig:
+    from app.services.thesis_expand import expand_tracking_topics
+
     is_admin = partner.role == PartnerRole.admin
     # Shared/firm-wide configs: partner_id null — admin only
     if body.is_shared:
@@ -141,12 +143,19 @@ def create_thesis(
         partner_id = partner.id
         is_shared = False
 
+    # Prefer partner-facing topics; fall back to explicit advanced fields.
+    topics = body.topics or [str(k) for k in (body.keywords or [])]
+    expanded = expand_tracking_topics(topics)
+    keywords = body.keywords or expanded["keywords"]
+    exa_queries = body.exa_queries or expanded["exa_queries"]
+    github_topics = body.github_topics or expanded["github_topics"]
+
     row = ThesisConfig(
         partner_id=partner_id,
         name=body.name,
-        keywords=body.keywords,
-        exa_queries=body.exa_queries,
-        github_topics=body.github_topics,
+        keywords=keywords,
+        exa_queries=exa_queries,
+        github_topics=github_topics,
         is_shared=is_shared,
         is_active=body.is_active,
     )
@@ -170,12 +179,29 @@ def update_thesis(
     if row.partner_id != partner.id and not (is_admin and (row.is_shared or row.partner_id is None)):
         raise HTTPException(403, "Not your thesis config")
 
-    for field in ("name", "keywords", "exa_queries", "github_topics", "is_shared", "is_active"):
-        val = getattr(body, field)
-        if val is not None:
-            if field == "is_shared" and val and not is_admin:
-                raise HTTPException(403, "Only admins can mark thesis as shared")
-            setattr(row, field, val)
+    from app.services.thesis_expand import expand_tracking_topics
+
+    if body.name is not None:
+        row.name = body.name
+    if body.topics is not None:
+        expanded = expand_tracking_topics(body.topics)
+        row.keywords = expanded["keywords"]
+        row.exa_queries = expanded["exa_queries"]
+        row.github_topics = expanded["github_topics"]
+    else:
+        if body.keywords is not None:
+            row.keywords = body.keywords
+        if body.exa_queries is not None:
+            row.exa_queries = body.exa_queries
+        if body.github_topics is not None:
+            row.github_topics = body.github_topics
+    if body.is_active is not None:
+        row.is_active = body.is_active
+    if body.is_shared is not None:
+        if body.is_shared and not is_admin:
+            raise HTTPException(403, "Only admins can mark thesis as shared")
+        row.is_shared = body.is_shared
+
     db.commit()
     db.refresh(row)
     return row

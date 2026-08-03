@@ -70,8 +70,8 @@ export function MyQueue() {
       <div>
         <h1 className="text-3xl tracking-tight">My Queue</h1>
         <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Team pipeline filtered to your thesis areas and watchlist, ranked by
-          your rubric overlay.
+          Companies matching what you track, ranked for your priorities. Update
+          those anytime in Settings.
         </p>
         {data?.partner && (
           <p className="mt-3 text-sm text-[var(--muted)]">

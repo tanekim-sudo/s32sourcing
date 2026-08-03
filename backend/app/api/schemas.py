@@ -41,6 +41,8 @@ class HealthOut(BaseModel):
 
 class ThesisConfigCreate(BaseModel):
     name: str
+    # Partner-facing: plain topics. Server expands into keywords/exa/github.
+    topics: List[str] = Field(default_factory=list)
     keywords: List[Any] = Field(default_factory=list)
     exa_queries: List[Any] = Field(default_factory=list)
     github_topics: List[Any] = Field(default_factory=list)
@@ -51,6 +53,7 @@ class ThesisConfigCreate(BaseModel):
 
 class ThesisConfigUpdate(BaseModel):
     name: Optional[str] = None
+    topics: Optional[List[str]] = None
     keywords: Optional[List[Any]] = None
     exa_queries: Optional[List[Any]] = None
     github_topics: Optional[List[Any]] = None

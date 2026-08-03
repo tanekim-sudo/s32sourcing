@@ -6,9 +6,7 @@ import { usePathname } from "next/navigation";
 const NAV = [
   { href: "/", label: "My Queue" },
   { href: "/queue", label: "Team Queue" },
-  { href: "/my-thesis", label: "My Thesis" },
-  { href: "/my-rubric", label: "My Rubric" },
-  { href: "/firm-rubric", label: "Firm Rubric" },
+  { href: "/settings", label: "Settings" },
 ];
 
 const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -19,7 +17,6 @@ function AuthControls() {
       <span className="text-xs text-[var(--muted)]">Dev mode (no Clerk)</span>
     );
   }
-  // Lazy require so builds without ClerkProvider stay clean
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { UserButton } = require("@clerk/nextjs");
   return <UserButton />;

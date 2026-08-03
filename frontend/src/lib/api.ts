@@ -167,7 +167,7 @@ export const fetchSharedThesis = (token: string | null) =>
 
 export const createThesis = (
   token: string | null,
-  body: Partial<ThesisConfig> & { name: string }
+  body: Partial<ThesisConfig> & { name: string; topics?: string[] }
 ) =>
   api<ThesisConfig>("/api/me/thesis", token, {
     method: "POST",
@@ -177,7 +177,7 @@ export const createThesis = (
 export const updateThesis = (
   token: string | null,
   id: number,
-  body: Partial<ThesisConfig>
+  body: Partial<ThesisConfig> & { topics?: string[] }
 ) =>
   api<ThesisConfig>(`/api/me/thesis/${id}`, token, {
     method: "PATCH",
