@@ -11,14 +11,18 @@ from app.api.schemas import (
     CompanyDetailOut,
     FeedbackCreate,
     FeedbackOut,
+    FlagOut,
+    FlagUpsert,
     HealthOut,
     PartnerOut,
+    PartnerSettingsUpdate,
     PipelineRunOut,
     QueueResponse,
     RubricBaseCreate,
     RubricBaseOut,
     RubricOverlayOut,
     RubricOverlayUpsert,
+    TeamShareOut,
     ThesisConfigCreate,
     ThesisConfigOut,
     ThesisConfigUpdate,
@@ -30,12 +34,14 @@ from app.core.config import REPO_ROOT, get_settings
 from app.core.database import get_db
 from app.models.entities import (
     Company,
+    CompanyFlag,
     Feedback,
     Partner,
     PartnerRole,
     RubricBase,
     RubricOverlay,
     Score,
+    TeamShare,
     ThesisConfig,
     WatchlistEntry,
 )
@@ -54,6 +60,8 @@ def _partner_out(partner: Partner) -> PartnerOut:
         name=partner.name,
         email=partner.email,
         role=partner.role.value if hasattr(partner.role, "value") else str(partner.role),
+        refresh_interval_hours=getattr(partner, "refresh_interval_hours", 0) or 0,
+        last_refresh_at=getattr(partner, "last_refresh_at", None),
     )
 
 
@@ -69,6 +77,35 @@ def health() -> HealthOut:
 @router.get("/me", response_model=PartnerOut)
 def me(partner: Partner = Depends(get_current_partner)) -> PartnerOut:
     return _partner_out(partner)
+
+
+@router.patch("/me/settings", response_model=PartnerOut)
+def update_my_settings(
+    body: PartnerSettingsUpdate,
+    partner: Partner = Depends(get_current_partner),
+    db: Session = Depends(get_db),
+) -> PartnerOut:
+    if body.refresh_interval_hours not in (0, 1, 6, 12, 24):
+        raise HTTPException(400, "refresh_interval_hours must be 0, 1, 6, 12, or 24")
+    partner.refresh_interval_hours = body.refresh_interval_hours
+    db.add(partner)
+    db.commit()
+    db.refresh(partner)
+    return _partner_out(partner)
+
+
+@router.post("/me/research/refresh", response_model=PipelineRunOut)
+async def refresh_my_research(
+    partner: Partner = Depends(get_current_partner),
+    db: Session = Depends(get_db),
+) -> PipelineRunOut:
+    """Run full research now against this partner's tracking areas."""
+    if not queue_service.partner_has_tracking(db, partner):
+        raise HTTPException(400, "Add a tracking area in Settings before refreshing")
+    report = await pipeline_service.run_sourcing_pipeline(
+        db, partner_id=partner.id, score=True, push=True
+    )
+    return PipelineRunOut(report=report)
 
 
 # ── Queues ──────────────────────────────────────────────────────────────────
@@ -482,6 +519,24 @@ def company_detail(
         for s in company.signals
     ]
 
+    my_flag_row = (
+        db.query(CompanyFlag)
+        .filter(CompanyFlag.partner_id == partner.id, CompanyFlag.company_id == company_id)
+        .one_or_none()
+    )
+    my_share = (
+        db.query(TeamShare)
+        .filter(TeamShare.partner_id == partner.id, TeamShare.company_id == company_id)
+        .one_or_none()
+    )
+    shared_by = [
+        r[0]
+        for r in db.query(Partner.name)
+        .join(TeamShare, TeamShare.partner_id == Partner.id)
+        .filter(TeamShare.company_id == company_id)
+        .all()
+    ]
+
     return CompanyDetailOut(
         id=company.id,
         name=company.name,
@@ -499,6 +554,9 @@ def company_detail(
         signals=signals,
         feedback=feedback_out,
         on_my_watchlist=on_mine,
+        my_flag=my_flag_row.flag if my_flag_row else None,
+        shared_to_team=my_share is not None,
+        shared_by=shared_by,
     )
 
 
@@ -557,6 +615,93 @@ def upsert_feedback(
     )
 
 
+@router.put("/companies/{company_id}/flag", response_model=FlagOut)
+def upsert_flag(
+    company_id: int,
+    body: FlagUpsert,
+    partner: Partner = Depends(get_current_partner),
+    db: Session = Depends(get_db),
+) -> FlagOut:
+    if body.flag not in ("follow_up", "interesting", "pass"):
+        raise HTTPException(400, "flag must be follow_up, interesting, or pass")
+    if not db.query(Company).filter(Company.id == company_id).first():
+        raise HTTPException(404, "Company not found")
+    row = (
+        db.query(CompanyFlag)
+        .filter(CompanyFlag.partner_id == partner.id, CompanyFlag.company_id == company_id)
+        .one_or_none()
+    )
+    if row:
+        row.flag = body.flag
+        row.note = body.note
+    else:
+        row = CompanyFlag(
+            partner_id=partner.id,
+            company_id=company_id,
+            flag=body.flag,
+            note=body.note,
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return FlagOut.model_validate(row)
+
+
+@router.delete("/companies/{company_id}/flag", status_code=204)
+def clear_flag(
+    company_id: int,
+    partner: Partner = Depends(get_current_partner),
+    db: Session = Depends(get_db),
+) -> None:
+    row = (
+        db.query(CompanyFlag)
+        .filter(CompanyFlag.partner_id == partner.id, CompanyFlag.company_id == company_id)
+        .one_or_none()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+
+
+@router.post("/companies/{company_id}/share-to-team", response_model=TeamShareOut)
+def share_to_team(
+    company_id: int,
+    partner: Partner = Depends(get_current_partner),
+    db: Session = Depends(get_db),
+) -> TeamShareOut:
+    if not db.query(Company).filter(Company.id == company_id).first():
+        raise HTTPException(404, "Company not found")
+    row = (
+        db.query(TeamShare)
+        .filter(TeamShare.partner_id == partner.id, TeamShare.company_id == company_id)
+        .one_or_none()
+    )
+    if not row:
+        row = TeamShare(partner_id=partner.id, company_id=company_id)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    out = TeamShareOut.model_validate(row)
+    out.partner_name = partner.name
+    return out
+
+
+@router.delete("/companies/{company_id}/share-to-team", status_code=204)
+def unshare_from_team(
+    company_id: int,
+    partner: Partner = Depends(get_current_partner),
+    db: Session = Depends(get_db),
+) -> None:
+    row = (
+        db.query(TeamShare)
+        .filter(TeamShare.partner_id == partner.id, TeamShare.company_id == company_id)
+        .one_or_none()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+
+
 # ── Pipeline / scoring ──────────────────────────────────────────────────────
 
 
@@ -565,7 +710,8 @@ async def run_pipeline(
     partner: Partner = Depends(get_current_partner),
     db: Session = Depends(get_db),
 ) -> PipelineRunOut:
-    report = await pipeline_service.run_sourcing_pipeline(db)
+    # Partner-scoped research (same as Refresh)
+    report = await pipeline_service.run_sourcing_pipeline(db, partner_id=partner.id)
     return PipelineRunOut(report=report)
 
 

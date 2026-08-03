@@ -32,7 +32,8 @@ export default function TeamQueuePage() {
       <div>
         <h1 className="text-3xl tracking-tight">Team Queue</h1>
         <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Shared firm pipeline, ranked by the firm score.
+          Only companies a partner has shared. Push from a company page so
+          others can adopt it. Ranked with your weights.
         </p>
       </div>
 
@@ -44,7 +45,8 @@ export default function TeamQueuePage() {
 
       <QueueList
         items={data?.items ?? []}
-        emptyText="No scored companies in the shared pipeline yet."
+        showOverlay
+        emptyText="Team Queue is empty. Open a company in My Queue and tap Share with team."
       />
     </div>
   );

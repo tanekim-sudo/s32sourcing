@@ -1,5 +1,6 @@
 from app.models.entities import (
     Company,
+    CompanyFlag,
     Feedback,
     Partner,
     Person,
@@ -7,6 +8,7 @@ from app.models.entities import (
     RubricOverlay,
     Score,
     Signal,
+    TeamShare,
     ThesisConfig,
     WatchlistEntry,
 )
@@ -22,4 +24,6 @@ __all__ = [
     "RubricOverlay",
     "Score",
     "Feedback",
+    "TeamShare",
+    "CompanyFlag",
 ]

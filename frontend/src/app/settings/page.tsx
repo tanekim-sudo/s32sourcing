@@ -5,19 +5,21 @@ import {
   createCompany,
   createThesis,
   deleteThesis,
+  fetchMe,
   fetchMyThesis,
   fetchOverlay,
-  fetchSharedThesis,
   fetchWatchlist,
+  refreshResearch,
   removeWatchlist,
   saveOverlay,
+  updateSettings,
   updateThesis,
+  type Partner,
   type ThesisConfig,
   type WatchlistEntry,
 } from "@/lib/api";
 import { useApiToken } from "@/hooks/useApiToken";
 
-/** Partner-facing labels — no pipeline jargon. */
 const PRIORITIES = [
   {
     key: "founder_quality",
@@ -33,20 +35,27 @@ const PRIORITIES = [
     key: "vc_attention",
     label: "Prefer quieter deals",
     help: "Higher = penalize crowded / overhyped more",
-    // UI slider maps to more-negative weight (care more about low attention)
     invertDisplay: true,
   },
   {
     key: "traction_signal",
     label: "Traction",
-    help: "Users, revenue, hiring, GitHub activity",
+    help: "Users, revenue, hiring, activity",
   },
   {
     key: "network_proximity",
     label: "Warm path / network",
-    help: "Affinity relationships and intros",
+    help: "Relationships and intros",
   },
 ] as const;
+
+const REFRESH_OPTIONS = [
+  { value: 0, label: "Manual only" },
+  { value: 1, label: "Every hour" },
+  { value: 6, label: "Every 6 hours" },
+  { value: 12, label: "Every 12 hours" },
+  { value: 24, label: "Once a day" },
+];
 
 function parseTopics(text: string): string[] {
   return text
@@ -59,10 +68,8 @@ function topicsToText(topics: string[]): string {
   return topics.join(", ");
 }
 
-/** Map UI slider (-2..+2) ↔ weight delta. */
 function sliderToDelta(v: number, invert?: boolean): number {
-  const n = Number(v);
-  return (invert ? -n : n) * 0.05;
+  return (invert ? -Number(v) : Number(v)) * 0.05;
 }
 
 function deltaToSlider(delta: number, invert?: boolean): number {
@@ -72,9 +79,10 @@ function deltaToSlider(delta: number, invert?: boolean): number {
 
 export default function SettingsPage() {
   const { getToken, isLoaded, isSignedIn } = useApiToken();
+  const [me, setMe] = useState<Partner | null>(null);
   const [areas, setAreas] = useState<ThesisConfig[]>([]);
-  const [shared, setShared] = useState<ThesisConfig[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistEntry[]>([]);
+  const [refreshHours, setRefreshHours] = useState(0);
   const [priorities, setPriorities] = useState<Record<string, number>>({
     founder_quality: 0,
     market_timing_fit: 0,
@@ -84,6 +92,7 @@ export default function SettingsPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const [areaName, setAreaName] = useState("");
   const [areaTopics, setAreaTopics] = useState("");
@@ -93,14 +102,15 @@ export default function SettingsPage() {
 
   const load = async () => {
     const token = await getToken();
-    const [t, s, w, o] = await Promise.all([
+    const [partner, t, w, o] = await Promise.all([
+      fetchMe(token),
       fetchMyThesis(token),
-      fetchSharedThesis(token),
       fetchWatchlist(token),
       fetchOverlay(token),
     ]);
+    setMe(partner);
+    setRefreshHours(partner.refresh_interval_hours ?? 0);
     setAreas(t);
-    setShared(s);
     setWatchlist(w);
     const next: Record<string, number> = {
       founder_quality: 0,
@@ -111,7 +121,10 @@ export default function SettingsPage() {
     };
     const adj = o?.weight_adjustments || {};
     for (const p of PRIORITIES) {
-      next[p.key] = deltaToSlider(Number(adj[p.key] || 0), "invertDisplay" in p && p.invertDisplay);
+      next[p.key] = deltaToSlider(
+        Number(adj[p.key] || 0),
+        "invertDisplay" in p && p.invertDisplay
+      );
     }
     setPriorities(next);
   };
@@ -126,7 +139,32 @@ export default function SettingsPage() {
 
   const flash = (msg: string) => {
     setSavedMsg(msg);
-    setTimeout(() => setSavedMsg(null), 2500);
+    setTimeout(() => setSavedMsg(null), 3000);
+  };
+
+  const saveRefresh = async () => {
+    const token = await getToken();
+    const p = await updateSettings(token, {
+      refresh_interval_hours: refreshHours,
+    });
+    setMe(p);
+    flash("Research schedule saved");
+  };
+
+  const runRefreshNow = async () => {
+    setBusy(true);
+    try {
+      const token = await getToken();
+      const res = await refreshResearch(token);
+      flash(
+        `Research finished — ${(res.report.scored as unknown[])?.length ?? 0} companies scored`
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Refresh failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const addArea = async (e: React.FormEvent) => {
@@ -160,7 +198,7 @@ export default function SettingsPage() {
       weight_adjustments,
       added_dimensions: [],
     });
-    flash("Priorities saved — your queue will re-rank");
+    flash("Priorities saved — My Queue re-ranks with these weights");
   };
 
   const addCompany = async (e: React.FormEvent) => {
@@ -188,8 +226,9 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-3xl tracking-tight">Settings</h1>
         <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Start here. Queues stay empty until you save at least one tracking
-          area or watchlist company. We handle search and scoring for you.
+          Choose what to track, how often to research, and what matters more to
+          you. Queues stay empty until you save a tracking area or watchlist
+          company.
         </p>
         {savedMsg && (
           <p className="mt-3 text-sm text-[var(--accent)]">{savedMsg}</p>
@@ -201,13 +240,58 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* ── Areas ─────────────────────────────────────────────── */}
+      {/* Research schedule */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-xl">Research schedule</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            How often should we pull fresh signals for your areas?
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3 border border-[var(--border)] p-4">
+          <label className="grid gap-1 text-sm">
+            <span>Refresh frequency</span>
+            <select
+              value={refreshHours}
+              onChange={(e) => setRefreshHours(Number(e.target.value))}
+              className="border border-[var(--border)] bg-transparent px-3 py-2"
+            >
+              {REFRESH_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={saveRefresh}
+            className="border border-[var(--border)] bg-[var(--panel)] px-4 py-2 text-sm"
+          >
+            Save schedule
+          </button>
+          <button
+            type="button"
+            disabled={busy || areas.length === 0}
+            onClick={runRefreshNow}
+            className="border border-[var(--border)] px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {busy ? "Researching…" : "Run research now"}
+          </button>
+          {me?.last_refresh_at && (
+            <p className="w-full text-xs text-[var(--muted)]">
+              Last research: {new Date(me.last_refresh_at).toLocaleString()}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Areas */}
       <section id="areas" className="space-y-5">
         <div>
           <h2 className="text-xl">Areas I track</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Name an area and list topics in plain English. Example topics:
-            “AI infrastructure”, “specialty clinic software”.
+            Plain-English topics. We handle the search sources for you.
           </p>
         </div>
 
@@ -252,23 +336,11 @@ export default function SettingsPage() {
             </li>
           ))}
           {areas.length === 0 && (
-            <li className="py-4 text-[var(--muted)]">
-              No personal areas yet — add one below.
-            </li>
+            <li className="py-4 text-[var(--muted)]">No areas yet.</li>
           )}
         </ul>
 
-        {shared.length > 0 && (
-          <div className="text-sm text-[var(--muted)]">
-            <span className="font-medium text-[var(--fg)]">Firm-wide also tracking: </span>
-            {shared.map((s) => s.name).join(" · ")}
-          </div>
-        )}
-
-        <form
-          onSubmit={addArea}
-          className="grid gap-3 border border-[var(--border)] p-4"
-        >
+        <form onSubmit={addArea} className="grid gap-3 border border-[var(--border)] p-4">
           <label className="grid gap-1 text-sm">
             <span>Area name</span>
             <input
@@ -280,7 +352,7 @@ export default function SettingsPage() {
             />
           </label>
           <label className="grid gap-1 text-sm">
-            <span>Topics to track (comma-separated)</span>
+            <span>Topics (comma-separated)</span>
             <textarea
               required
               value={areaTopics}
@@ -299,12 +371,12 @@ export default function SettingsPage() {
         </form>
       </section>
 
-      {/* ── Watchlist ─────────────────────────────────────────── */}
+      {/* Watchlist */}
       <section id="watchlist" className="space-y-5">
         <div>
           <h2 className="text-xl">Companies I watch</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Always show these in My Queue, even if they don’t match a topic yet.
+            Always appear in My Queue.
           </p>
         </div>
 
@@ -341,7 +413,7 @@ export default function SettingsPage() {
           onSubmit={addCompany}
           className="grid gap-3 border border-[var(--border)] p-4 sm:grid-cols-2"
         >
-          <label className="grid gap-1 text-sm sm:col-span-1">
+          <label className="grid gap-1 text-sm">
             <span>Company name</span>
             <input
               required
@@ -378,13 +450,12 @@ export default function SettingsPage() {
         </form>
       </section>
 
-      {/* ── Priorities ────────────────────────────────────────── */}
+      {/* Priorities / weights */}
       <section id="priorities" className="space-y-5">
         <div>
           <h2 className="text-xl">What matters more to me</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Adjust how My Queue ranks companies for you. The firm score stays
-            shared; this only changes your personal view.
+            These weights re-rank My Queue and Team Queue for you (your score).
           </p>
         </div>
 

@@ -5,6 +5,8 @@ export type Partner = {
   name: string;
   email: string;
   role: string;
+  refresh_interval_hours?: number;
+  last_refresh_at?: string | null;
 };
 
 export type QueueCompany = {
@@ -18,6 +20,9 @@ export type QueueCompany = {
   why_note?: string | null;
   matched_thesis_config_ids: number[];
   on_my_watchlist: boolean;
+  my_flag?: string | null;
+  shared_to_team?: boolean;
+  shared_by?: string | null;
 };
 
 export type QueueResponse = {
@@ -102,6 +107,9 @@ export type CompanyDetail = {
   }>;
   feedback: Feedback[];
   on_my_watchlist: boolean;
+  my_flag?: string | null;
+  shared_to_team?: boolean;
+  shared_by?: string[];
 };
 
 async function api<T>(
@@ -136,6 +144,22 @@ async function api<T>(
   return res.json();
 }
 
+export const fetchMe = (token: string | null) => api<Partner>("/api/me", token);
+
+export const updateSettings = (
+  token: string | null,
+  body: { refresh_interval_hours: number }
+) =>
+  api<Partner>("/api/me/settings", token, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+
+export const refreshResearch = (token: string | null) =>
+  api<{ report: Record<string, unknown> }>("/api/me/research/refresh", token, {
+    method: "POST",
+  });
+
 export const fetchMyQueue = (token: string | null) =>
   api<QueueResponse>("/api/queue/mine", token);
 
@@ -159,6 +183,25 @@ export const postFeedback = (
     method: "POST",
     body: JSON.stringify(body),
   });
+
+export const setFlag = (
+  token: string | null,
+  companyId: number,
+  body: { flag: string; note?: string }
+) =>
+  api<{ flag: string }>(`/api/companies/${companyId}/flag`, token, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const clearFlag = (token: string | null, companyId: number) =>
+  api<void>(`/api/companies/${companyId}/flag`, token, { method: "DELETE" });
+
+export const shareToTeam = (token: string | null, companyId: number) =>
+  api<unknown>(`/api/companies/${companyId}/share-to-team`, token, { method: "POST" });
+
+export const unshareFromTeam = (token: string | null, companyId: number) =>
+  api<void>(`/api/companies/${companyId}/share-to-team`, token, { method: "DELETE" });
 
 export const fetchMyThesis = (token: string | null) =>
   api<ThesisConfig[]>("/api/me/thesis", token);
@@ -231,6 +274,3 @@ export const createBaseRubric = (
     method: "POST",
     body: JSON.stringify(body),
   });
-
-export const runPipeline = (token: string | null) =>
-  api<{ report: Record<string, unknown> }>("/api/pipeline/run", token, { method: "POST" });

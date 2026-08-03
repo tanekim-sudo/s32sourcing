@@ -39,12 +39,17 @@ class Partner(Base):
         nullable=False,
         default=PartnerRole.partner,
     )
+    # 0 = manual refresh only; otherwise auto-research every N hours
+    refresh_interval_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_refresh_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     thesis_configs: Mapped[List["ThesisConfig"]] = relationship(back_populates="partner")
     watchlist_entries: Mapped[List["WatchlistEntry"]] = relationship(back_populates="partner")
     rubric_overlays: Mapped[List["RubricOverlay"]] = relationship(back_populates="partner")
     feedback: Mapped[List["Feedback"]] = relationship(back_populates="partner")
+    team_shares: Mapped[List["TeamShare"]] = relationship(back_populates="partner")
+    flags: Mapped[List["CompanyFlag"]] = relationship(back_populates="partner")
 
 
 class ThesisConfig(Base):
@@ -83,6 +88,8 @@ class Company(Base):
     scores: Mapped[List["Score"]] = relationship(back_populates="company")
     watchlist_entries: Mapped[List["WatchlistEntry"]] = relationship(back_populates="company")
     feedback: Mapped[List["Feedback"]] = relationship(back_populates="company")
+    team_shares: Mapped[List["TeamShare"]] = relationship(back_populates="company")
+    flags: Mapped[List["CompanyFlag"]] = relationship(back_populates="company")
 
 
 class Person(Base):
@@ -197,3 +204,36 @@ class Feedback(Base):
 
     partner: Mapped["Partner"] = relationship(back_populates="feedback")
     company: Mapped["Company"] = relationship(back_populates="feedback")
+
+
+class TeamShare(Base):
+    """Companies a partner explicitly pushed to the Team Queue for others to adopt."""
+
+    __tablename__ = "team_shares"
+    __table_args__ = (UniqueConstraint("partner_id", "company_id", name="uq_team_share_partner_company"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"), nullable=False, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    partner: Mapped["Partner"] = relationship(back_populates="team_shares")
+    company: Mapped["Company"] = relationship(back_populates="team_shares")
+
+
+class CompanyFlag(Base):
+    """Partner flags on a company (follow_up / interesting / pass)."""
+
+    __tablename__ = "company_flags"
+    __table_args__ = (UniqueConstraint("partner_id", "company_id", name="uq_flag_partner_company"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    partner_id: Mapped[int] = mapped_column(ForeignKey("partners.id"), nullable=False, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    flag: Mapped[str] = mapped_column(String(32), nullable=False)  # follow_up | interesting | pass
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    partner: Mapped["Partner"] = relationship(back_populates="flags")
+    company: Mapped["Company"] = relationship(back_populates="flags")

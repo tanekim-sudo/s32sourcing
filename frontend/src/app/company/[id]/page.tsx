@@ -4,8 +4,11 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   addWatchlist,
+  clearFlag,
   fetchCompany,
-  postFeedback,
+  setFlag,
+  shareToTeam,
+  unshareFromTeam,
   type CompanyDetail,
 } from "@/lib/api";
 import { useApiToken } from "@/hooks/useApiToken";
@@ -25,7 +28,7 @@ export default function CompanyPage() {
   const { getToken, isLoaded, isSignedIn } = useApiToken();
   const [data, setData] = useState<CompanyDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [comment, setComment] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
 
   const load = async () => {
     const token = await getToken();
@@ -40,16 +43,34 @@ export default function CompanyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn, id]);
 
-  const onFeedback = async (thumbs: number) => {
+  const onFlag = async (flag: string) => {
     const token = await getToken();
-    await postFeedback(token, id, { thumbs, comment: comment || undefined });
-    setComment("");
+    if (data?.my_flag === flag) {
+      await clearFlag(token, id);
+      setMsg("Flag cleared");
+    } else {
+      await setFlag(token, id, { flag });
+      setMsg(`Flagged: ${flag.replace("_", " ")}`);
+    }
+    await load();
+  };
+
+  const onShare = async () => {
+    const token = await getToken();
+    if (data?.shared_to_team) {
+      await unshareFromTeam(token, id);
+      setMsg("Removed from Team Queue");
+    } else {
+      await shareToTeam(token, id);
+      setMsg("Shared to Team Queue — others can adopt it");
+    }
     await load();
   };
 
   const onWatchlist = async () => {
     const token = await getToken();
     await addWatchlist(token, { company_id: id });
+    setMsg("Added to your watchlist");
     await load();
   };
 
@@ -76,26 +97,62 @@ export default function CompanyPage() {
           {data.description && (
             <p className="mt-4 max-w-2xl text-[var(--muted)]">{data.description}</p>
           )}
+          {data.shared_by && data.shared_by.length > 0 && (
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              On Team Queue via: {data.shared_by.join(", ")}
+            </p>
+          )}
         </div>
         <div className="text-right">
-          <div className="text-sm text-[var(--muted)]">Your overlay</div>
+          <div className="text-sm text-[var(--muted)]">Your score (weights applied)</div>
           <div className="text-3xl tabular-nums">
             {data.overlay_score?.toFixed(1) ?? "—"}
           </div>
           <div className="mt-1 text-sm text-[var(--muted)]">
-            Base {data.base_score?.toFixed(1) ?? "—"}
-            {data.rubric_base_version ? ` · v${data.rubric_base_version}` : ""}
+            Firm {data.base_score?.toFixed(1) ?? "—"}
           </div>
-          {!data.on_my_watchlist && (
-            <button
-              type="button"
-              onClick={onWatchlist}
-              className="mt-3 border border-[var(--border)] px-3 py-1.5 text-sm hover:border-[var(--accent)]"
-            >
-              Add to watchlist
-            </button>
-          )}
         </div>
+      </div>
+
+      {msg && <p className="text-sm text-[var(--accent)]">{msg}</p>}
+
+      <div className="flex flex-wrap gap-2">
+        {!data.on_my_watchlist && (
+          <button
+            type="button"
+            onClick={onWatchlist}
+            className="border border-[var(--border)] px-3 py-2 text-sm"
+          >
+            Add to watchlist
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onShare}
+          className="border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-sm"
+        >
+          {data.shared_to_team ? "Remove from Team Queue" : "Share with team"}
+        </button>
+        {(
+          [
+            ["interesting", "Interesting"],
+            ["follow_up", "Follow up"],
+            ["pass", "Pass"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onFlag(value)}
+            className={
+              data.my_flag === value
+                ? "border border-[var(--accent)] px-3 py-2 text-sm text-[var(--accent)]"
+                : "border border-[var(--border)] px-3 py-2 text-sm"
+            }
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {data.why_note && (
@@ -111,13 +168,11 @@ export default function CompanyPage() {
       )}
 
       <section>
-        <h2 className="text-xl">Base score breakdown</h2>
+        <h2 className="text-xl">Score breakdown</h2>
         <ul className="mt-4 divide-y divide-[var(--border)] border-y border-[var(--border)]">
           {Object.entries(data.subscores || {}).map(([dim, raw]) => {
             const score = subscoreValue(raw);
-            const ev = (data.evidence?.[dim] || {}) as {
-              citations?: string[];
-            };
+            const ev = (data.evidence?.[dim] || {}) as { citations?: string[] };
             return (
               <li key={dim} className="py-3">
                 <div className="flex justify-between gap-4">
@@ -150,52 +205,9 @@ export default function CompanyPage() {
             </li>
           ))}
           {data.signals.length === 0 && (
-            <p className="text-[var(--muted)]">No signals yet.</p>
+            <p className="text-[var(--muted)]">No signals yet — run research.</p>
           )}
         </ul>
-      </section>
-
-      <section>
-        <h2 className="text-xl">Partner feedback</h2>
-        {data.watchlisted_by.length > 0 && (
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            On watchlist for: {data.watchlisted_by.join(", ")}
-          </p>
-        )}
-        <ul className="mt-4 space-y-2">
-          {data.feedback.map((f) => (
-            <li key={f.id} className="text-sm">
-              <span className="font-medium">{f.partner_name}</span>{" "}
-              {f.thumbs > 0 ? "👍" : "👎"}
-              {f.comment ? ` — ${f.comment}` : ""}
-            </li>
-          ))}
-          {data.feedback.length === 0 && (
-            <p className="text-sm text-[var(--muted)]">No feedback yet.</p>
-          )}
-        </ul>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <input
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Optional comment"
-            className="min-w-[220px] flex-1 border border-[var(--border)] bg-transparent px-3 py-2 text-sm"
-          />
-          <button
-            type="button"
-            onClick={() => onFeedback(1)}
-            className="border border-[var(--border)] px-3 py-2 text-sm"
-          >
-            Thumbs up
-          </button>
-          <button
-            type="button"
-            onClick={() => onFeedback(-1)}
-            className="border border-[var(--border)] px-3 py-2 text-sm"
-          >
-            Thumbs down
-          </button>
-        </div>
       </section>
     </div>
   );

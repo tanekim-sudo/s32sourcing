@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.adapters.base import ThesisQueryPlan, dedupe_thesis_queries
@@ -17,8 +17,11 @@ from app.services.notes import generate_partner_line
 from app.services.scoring import score_company
 
 
-def _active_thesis_dicts(db: Session) -> List[dict]:
-    rows = db.query(ThesisConfig).filter(ThesisConfig.is_active.is_(True)).all()
+def _thesis_dicts(db: Session, partner_id: Optional[int] = None) -> List[dict]:
+    q = db.query(ThesisConfig).filter(ThesisConfig.is_active.is_(True))
+    if partner_id is not None:
+        q = q.filter(ThesisConfig.partner_id == partner_id)
+    rows = q.all()
     return [
         {
             "id": t.id,
@@ -48,14 +51,20 @@ def _merge_candidates(groups: List[list]) -> list:
     return list(by_key.values())
 
 
-async def run_sourcing_pipeline(db: Session, *, score: bool = True, push: bool = True) -> Dict[str, Any]:
+async def run_sourcing_pipeline(
+    db: Session,
+    *,
+    partner_id: Optional[int] = None,
+    score: bool = True,
+    push: bool = True,
+) -> Dict[str, Any]:
     """
-    Shared firm pipeline:
-    union thesis configs → dedupe queries → pull adapters → normalize/dedupe
-    → (optional) Clay enqueue → base score once → Affinity auto-push on base threshold.
+    Research pipeline. If partner_id is set, only that partner's active areas
+    are searched (full Exa/GitHub/Specter pull when keys exist).
     """
-    thesis = _active_thesis_dicts(db)
+    thesis = _thesis_dicts(db, partner_id=partner_id)
     report: Dict[str, Any] = {
+        "partner_id": partner_id,
         "thesis_configs": len(thesis),
         "adapters": {},
         "ingest": {},
@@ -64,11 +73,19 @@ async def run_sourcing_pipeline(db: Session, *, score: bool = True, push: bool =
         "skipped_no_keys": [],
     }
 
-    # Deduped query plans per source field
+    if not thesis:
+        report["ingest"] = {
+            "candidates": 0,
+            "companies_created": 0,
+            "signals_created": 0,
+            "company_ids": [],
+        }
+        report["status"] = "no_tracking_areas"
+        return report
+
     keyword_plans = dedupe_thesis_queries(thesis, field="keywords")
     exa_plans = dedupe_thesis_queries(thesis, field="exa_queries")
     github_plans = dedupe_thesis_queries(thesis, field="github_topics")
-    # Specter uses keywords as search terms when present
     specter_plans = keyword_plans or [
         ThesisQueryPlan(
             query_key=str(t["name"]).lower(),
@@ -101,22 +118,25 @@ async def run_sourcing_pipeline(db: Session, *, score: bool = True, push: bool =
         report["adapters"][name] = {"pulled": len(pulled), "status": "ok", "plans": len(plans)}
 
     candidates = _merge_candidates(candidates_groups)
-    report["ingest"] = ingest_candidates(db, candidates) if candidates else {
-        "candidates": 0,
-        "companies_created": 0,
-        "signals_created": 0,
-        "company_ids": [],
-    }
+    report["ingest"] = (
+        ingest_candidates(db, candidates)
+        if candidates
+        else {
+            "candidates": 0,
+            "companies_created": 0,
+            "signals_created": 0,
+            "company_ids": [],
+        }
+    )
 
     company_ids: List[int] = list(report["ingest"].get("company_ids") or [])
 
-    # Enrichment enqueue (async; webhook returns later)
     for cid in company_ids:
         await clay.enqueue_enrichment(cid, {"company_id": cid})
 
     if score:
         for cid in company_ids:
-            s = await score_company(db, cid)
+            s = await score_company(db, cid, force=True)
             if s:
                 report["scored"].append({"company_id": cid, "base_score": s.total_score})
 
@@ -133,7 +153,38 @@ async def run_sourcing_pipeline(db: Session, *, score: bool = True, push: bool =
                     )
                     report["pushed"].append({"company_id": cid, **result})
 
+    if partner_id is not None:
+        partner = db.query(Partner).filter(Partner.id == partner_id).one_or_none()
+        if partner:
+            partner.last_refresh_at = datetime.now(timezone.utc)
+            db.add(partner)
+            db.commit()
+
+    report["status"] = "ok"
     return report
+
+
+async def refresh_due_partners(db: Session) -> Dict[str, Any]:
+    """Worker: run research for partners whose refresh interval has elapsed."""
+    now = datetime.now(timezone.utc)
+    partners = (
+        db.query(Partner)
+        .filter(Partner.refresh_interval_hours > 0)
+        .all()
+    )
+    ran = []
+    for p in partners:
+        due = False
+        if p.last_refresh_at is None:
+            due = True
+        else:
+            elapsed = (now - p.last_refresh_at).total_seconds() / 3600.0
+            due = elapsed >= float(p.refresh_interval_hours)
+        if not due:
+            continue
+        report = await run_sourcing_pipeline(db, partner_id=p.id, score=True, push=True)
+        ran.append({"partner_id": p.id, "email": p.email, "report": report})
+    return {"refreshed": ran, "checked": len(partners)}
 
 
 def _relevant_partner_names(db: Session, company_id: int) -> List[str]:

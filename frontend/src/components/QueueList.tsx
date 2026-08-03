@@ -3,6 +3,12 @@
 import Link from "next/link";
 import type { QueueCompany } from "@/lib/api";
 
+const FLAG_LABEL: Record<string, string> = {
+  follow_up: "Follow up",
+  interesting: "Interesting",
+  pass: "Pass",
+};
+
 export function QueueList({
   items,
   emptyText,
@@ -42,21 +48,31 @@ export function QueueList({
                 {item.why_note}
               </p>
             )}
-            {item.on_my_watchlist && (
-              <p className="mt-1 text-xs text-[var(--accent)]">On your watchlist</p>
-            )}
+            <div className="mt-2 flex flex-wrap gap-3 text-xs text-[var(--muted)]">
+              {item.on_my_watchlist && <span>Watchlist</span>}
+              {item.my_flag && (
+                <span className="text-[var(--accent)]">
+                  {FLAG_LABEL[item.my_flag] || item.my_flag}
+                </span>
+              )}
+              {item.shared_by && <span>Shared by {item.shared_by}</span>}
+              {item.shared_to_team && !item.shared_by && <span>On team queue</span>}
+            </div>
           </div>
           <div className="shrink-0 text-right text-sm tabular-nums">
-            {showOverlay && (
-              <div>
-                <span className="text-[var(--muted)]">You </span>
-                {item.overlay_score?.toFixed(1) ?? "—"}
-              </div>
+            {showOverlay ? (
+              <>
+                <div>
+                  <span className="text-[var(--muted)]">Your score </span>
+                  {item.overlay_score?.toFixed(1) ?? "—"}
+                </div>
+                <div className="text-[var(--muted)]">
+                  Firm {item.base_score?.toFixed(1) ?? "—"}
+                </div>
+              </>
+            ) : (
+              <div>{item.overlay_score?.toFixed(1) ?? item.base_score?.toFixed(1) ?? "—"}</div>
             )}
-            <div className={showOverlay ? "text-[var(--muted)]" : ""}>
-              {showOverlay ? "Base " : ""}
-              {item.base_score?.toFixed(1) ?? "—"}
-            </div>
           </div>
         </li>
       ))}

@@ -11,6 +11,39 @@ class PartnerOut(BaseModel):
     name: str
     email: EmailStr
     role: str
+    refresh_interval_hours: int = 0
+    last_refresh_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PartnerSettingsUpdate(BaseModel):
+    refresh_interval_hours: int  # 0 manual, 1, 6, 12, 24
+
+
+class FlagUpsert(BaseModel):
+    flag: str  # follow_up | interesting | pass
+    note: Optional[str] = None
+
+
+class FlagOut(BaseModel):
+    id: int
+    partner_id: int
+    company_id: int
+    flag: str
+    note: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TeamShareOut(BaseModel):
+    id: int
+    partner_id: int
+    partner_name: Optional[str] = None
+    company_id: int
+    note: Optional[str]
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -26,6 +59,9 @@ class QueueCompanyOut(BaseModel):
     why_note: Optional[str] = None
     matched_thesis_config_ids: List[int] = []
     on_my_watchlist: bool = False
+    my_flag: Optional[str] = None
+    shared_to_team: bool = False
+    shared_by: Optional[str] = None
 
 
 class QueueResponse(BaseModel):
@@ -170,6 +206,9 @@ class CompanyDetailOut(BaseModel):
     signals: List[Dict[str, Any]] = Field(default_factory=list)
     feedback: List[FeedbackOut] = Field(default_factory=list)
     on_my_watchlist: bool = False
+    my_flag: Optional[str] = None
+    shared_to_team: bool = False
+    shared_by: List[str] = Field(default_factory=list)
 
 
 class PipelineRunOut(BaseModel):

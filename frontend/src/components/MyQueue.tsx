@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchMyQueue, type QueueResponse } from "@/lib/api";
+import {
+  fetchMyQueue,
+  refreshResearch,
+  type QueueResponse,
+} from "@/lib/api";
 import { useApiToken } from "@/hooks/useApiToken";
 import { QueueList } from "@/components/QueueList";
 import { SetupGate } from "@/components/SetupGate";
@@ -11,6 +15,13 @@ export function MyQueue() {
   const [data, setData] = useState<QueueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+
+  const load = async () => {
+    const token = await getToken();
+    setData(await fetchMyQueue(token));
+  };
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -23,12 +34,8 @@ export function MyQueue() {
     (async () => {
       try {
         setLoading(true);
-        const token = await getToken();
-        const queue = await fetchMyQueue(token);
-        if (!cancelled) {
-          setData(queue);
-          setError(null);
-        }
+        await load();
+        if (!cancelled) setError(null);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load queue");
@@ -41,7 +48,32 @@ export function MyQueue() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getToken, isLoaded, isSignedIn]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const token = await getToken();
+      const res = await refreshResearch(token);
+      const pulled = Object.values(res.report.adapters || {}).reduce(
+        (sum: number, a) => {
+          const n = (a as { pulled?: number })?.pulled || 0;
+          return sum + n;
+        },
+        0
+      );
+      setRefreshMsg(
+        `Research complete — ${pulled} signals pulled, ${(res.report.scored as unknown[])?.length ?? 0} scored.`
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (!isLoaded || loading) {
     return <p className="text-[var(--muted)]">Loading…</p>;
@@ -67,16 +99,32 @@ export function MyQueue() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl tracking-tight">My Queue</h1>
-        <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Only companies matching what you track, ranked for your priorities.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl tracking-tight">My Queue</h1>
+          <p className="mt-2 max-w-xl text-[var(--muted)]">
+            Ranked with your priority weights. Refresh runs full research on your
+            tracking areas.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={refreshing}
+          onClick={onRefresh}
+          className="border border-[var(--border)] bg-[var(--panel)] px-4 py-2 text-sm disabled:opacity-50"
+        >
+          {refreshing ? "Researching…" : "Refresh research"}
+        </button>
       </div>
+
+      {refreshMsg && (
+        <p className="text-sm text-[var(--accent)]">{refreshMsg}</p>
+      )}
+
       <QueueList
         items={data?.items ?? []}
         showOverlay
-        emptyText="No matches yet for your tracking areas. The pipeline will fill this as signals arrive."
+        emptyText="No matches yet. Hit Refresh research after saving tracking areas."
       />
     </div>
   );
