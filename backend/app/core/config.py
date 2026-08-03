@@ -11,6 +11,15 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 THRESHOLDS_PATH = REPO_ROOT / "config" / "thresholds.yaml"
 
 
+def _normalize_database_url(url: str) -> str:
+    """Render/Heroku give postgres:// — SQLAlchemy+psycopg needs postgresql+psycopg://."""
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and "+psycopg" not in url:
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
@@ -42,12 +51,18 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> List[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        origins = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        # Convenience: allow all Vercel preview/prod URLs when wildcard marker set
+        if "*" in origins:
+            return ["*"]
+        return origins
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings = Settings()
+    settings.database_url = _normalize_database_url(settings.database_url)
+    return settings
 
 
 @lru_cache

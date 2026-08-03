@@ -50,8 +50,13 @@ export function MyQueue() {
     return (
       <div className="space-y-3">
         <p className="text-[var(--muted)]">
-          Couldn’t reach the API. Start Postgres + backend (`make db-up`,
-          `make migrate`, `make api`), then refresh.
+          Couldn’t reach the API at{" "}
+          <code>{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}</code>.
+        </p>
+        <p className="text-sm text-[var(--muted)]">
+          On Vercel, localhost will not work. Deploy the backend with the Render
+          blueprint (<code>render.yaml</code>), set{" "}
+          <code>NEXT_PUBLIC_API_URL</code> to that HTTPS URL, then redeploy.
         </p>
         <pre className="overflow-x-auto border border-[var(--border)] bg-[var(--panel)] p-4 text-xs text-[var(--muted)]">
           {error}
