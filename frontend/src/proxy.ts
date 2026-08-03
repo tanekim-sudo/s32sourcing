@@ -15,9 +15,9 @@ const clerkHandler = clerkMiddleware(async (auth, request) => {
   }
 });
 
-export default function middleware(request: NextRequest, event: unknown) {
+export function proxy(request: NextRequest, event: unknown) {
   if (!clerkConfigured) {
-    // Local scaffold without Clerk keys — allow all routes.
+    // Local / Vercel preview without Clerk keys — allow all routes.
     return NextResponse.next();
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
