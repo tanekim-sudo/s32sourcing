@@ -1,0 +1,42 @@
+# Env / secrets — never commit real keys
+.env
+.env.local
+.env.*.local
+frontend/.env.local
+!.env.example
+!frontend/.env.local.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+.coverage
+htmlcov/
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker / data
+pgdata/
+
+# Logs
+*.log

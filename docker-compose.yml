@@ -1,0 +1,75 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: s32sourcing-db
+    environment:
+      POSTGRES_USER: s32
+      POSTGRES_PASSWORD: s32
+      POSTGRES_DB: s32sourcing
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U s32 -d s32sourcing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: s32sourcing-api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://s32:s32@db:5432/s32sourcing
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: s32sourcing-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://s32:s32@db:5432/s32sourcing
+      AUTH_DEV_BYPASS: "true"
+      AUTH_DEV_PARTNER_EMAIL: worker@s32.com
+    command: ["python", "scripts/run_pipeline_loop.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: s32sourcing-frontend
+    environment:
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:

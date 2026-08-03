@@ -1,0 +1,54 @@
+version: "1.0.0"
+name: S32 Firm Base Rubric
+description: >
+  Shared firm-wide scoring rubric. Scored once per company per version.
+  Partner overlays adjust weights / add dimensions without re-running this pass.
+
+dimensions:
+  founder_quality:
+    weight: 0.30
+    description: Founder background, domain expertise, prior outcomes, team composition.
+    signals:
+      - prior_founder_exit
+      - domain_expertise_years
+      - technical_depth
+      - team_completeness
+
+  market_timing_fit:
+    weight: 0.25
+    description: Market timing, category inflection, regulatory or tech enablers.
+    signals:
+      - category_growth
+      - timing_catalysts
+      - competitive_whitespace
+
+  vc_attention:
+    # NEGATIVE by design: historical top outcomes had LOW VC attention at first contact.
+    weight: -0.15
+    description: Existing VC heat / crowedness. High attention lowers the score.
+    signals:
+      - recent_funding_rounds
+      - investor_list_density
+      - press_velocity
+
+  traction_signal:
+    weight: 0.25
+    description: Early traction proxies — users, revenue, GitHub activity, hiring.
+    signals:
+      - revenue_or_arr_proxy
+      - user_growth
+      - github_velocity
+      - hiring_signal
+
+  network_proximity:
+    weight: 0.20
+    description: Warm paths via Affinity, shared investors, alumni, or partner graph.
+    signals:
+      - affinity_relationship_strength
+      - shared_investor
+      - alumni_or_warm_intro
+
+scoring:
+  method: hybrid_rules_llm
+  evidence_required: true
+  normalize_to: 0_100

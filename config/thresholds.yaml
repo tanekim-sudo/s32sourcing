@@ -1,0 +1,33 @@
+# Score thresholds and auto-push policy.
+# Edit without touching application code.
+
+scoring:
+  # Base rubric total score range assumed 0–100 unless dimensions redefine it.
+  max_score: 100
+
+auto_push:
+  # Push decision uses BASE score only (never partner overlay).
+  enabled: true
+  min_base_score: 70
+  require_evidence: true
+
+queues:
+  team:
+    default_page_size: 50
+    min_base_score: 0
+  my_queue:
+    default_page_size: 50
+    # Include companies matching partner thesis OR on their watchlist.
+    include_watchlist: true
+    include_thesis_matches: true
+
+overlay:
+  # Overlay re-rank is arithmetic; short TTL cache for My Queue.
+  cache_ttl_seconds: 30
+  # Only call LLM for custom dimensions when base evidence is insufficient.
+  llm_for_added_dimensions: on_missing_evidence
+
+notes:
+  generate_shared_why: true
+  # One short partner-specific line when thesis/watchlist match is strong.
+  partner_line_min_relevance: 0.7
