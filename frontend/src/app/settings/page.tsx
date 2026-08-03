@@ -188,8 +188,8 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-3xl tracking-tight">Settings</h1>
         <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Tell us what you care about. We handle search, scoring, and CRM wiring
-          in the background.
+          Start here. Queues stay empty until you save at least one tracking
+          area or watchlist company. We handle search and scoring for you.
         </p>
         {savedMsg && (
           <p className="mt-3 text-sm text-[var(--accent)]">{savedMsg}</p>

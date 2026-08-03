@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV = [
-  { href: "/", label: "My Queue" },
-  { href: "/queue", label: "Team Queue" },
   { href: "/settings", label: "Settings" },
+  { href: "/queue/mine", label: "My Queue" },
+  { href: "/queue", label: "Team Queue" },
 ];
 
 const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -36,14 +36,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-[var(--border)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-6 px-6 py-4">
           <div className="flex items-baseline gap-6">
-            <Link href="/" className="text-lg tracking-tight">
+            <Link href="/settings" className="text-lg tracking-tight">
               S32 <span className="text-[var(--muted)]">Sourcing</span>
             </Link>
             <nav className="hidden items-center gap-4 text-sm sm:flex">
               {NAV.map((item) => {
                 const active =
-                  item.href === "/"
-                    ? pathname === "/"
+                  item.href === "/settings"
+                    ? pathname === "/settings"
                     : pathname?.startsWith(item.href);
                 return (
                   <Link

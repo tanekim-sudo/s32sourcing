@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchMyQueue, type QueueResponse } from "@/lib/api";
 import { useApiToken } from "@/hooks/useApiToken";
 import { QueueList } from "@/components/QueueList";
+import { SetupGate } from "@/components/SetupGate";
 
 export function MyQueue() {
   const { getToken, isLoaded, isSignedIn } = useApiToken();
@@ -43,20 +44,15 @@ export function MyQueue() {
   }, [getToken, isLoaded, isSignedIn]);
 
   if (!isLoaded || loading) {
-    return <p className="text-[var(--muted)]">Loading your queue…</p>;
+    return <p className="text-[var(--muted)]">Loading…</p>;
   }
 
   if (error) {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     return (
       <div className="space-y-3">
         <p className="text-[var(--muted)]">
-          Couldn’t reach the API at{" "}
-          <code>{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}</code>.
-        </p>
-        <p className="text-sm text-[var(--muted)]">
-          On Vercel, localhost will not work. Deploy the backend with the Render
-          blueprint (<code>render.yaml</code>), set{" "}
-          <code>NEXT_PUBLIC_API_URL</code> to that HTTPS URL, then redeploy.
+          Couldn’t reach the API at <code>{apiUrl}</code>.
         </p>
         <pre className="overflow-x-auto border border-[var(--border)] bg-[var(--panel)] p-4 text-xs text-[var(--muted)]">
           {error}
@@ -65,24 +61,22 @@ export function MyQueue() {
     );
   }
 
+  if (data?.setup_required) {
+    return <SetupGate title="My Queue" />;
+  }
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl tracking-tight">My Queue</h1>
         <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Companies matching what you track, ranked for your priorities. Update
-          those anytime in Settings.
+          Only companies matching what you track, ranked for your priorities.
         </p>
-        {data?.partner && (
-          <p className="mt-3 text-sm text-[var(--muted)]">
-            Signed in as {data.partner.name} ({data.partner.email})
-          </p>
-        )}
       </div>
       <QueueList
         items={data?.items ?? []}
         showOverlay
-        emptyText="No companies in your queue yet. Add thesis configs / watchlist entries, then run the shared sourcing pipeline."
+        emptyText="No matches yet for your tracking areas. The pipeline will fill this as signals arrive."
       />
     </div>
   );

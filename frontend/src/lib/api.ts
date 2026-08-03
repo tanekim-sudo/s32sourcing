@@ -24,6 +24,7 @@ export type QueueResponse = {
   partner: Partner;
   items: QueueCompany[];
   total: number;
+  setup_required?: boolean;
 };
 
 export type ThesisConfig = {

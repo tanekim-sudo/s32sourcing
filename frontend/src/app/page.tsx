@@ -1,5 +1,6 @@
-import { MyQueue } from "@/components/MyQueue";
+import { redirect } from "next/navigation";
 
+/** Settings first — nothing to show until tracking is configured. */
 export default function HomePage() {
-  return <MyQueue />;
+  redirect("/settings");
 }

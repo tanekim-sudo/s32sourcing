@@ -32,6 +32,7 @@ class QueueResponse(BaseModel):
     partner: PartnerOut
     items: List[QueueCompanyOut]
     total: int
+    setup_required: bool = False
 
 
 class HealthOut(BaseModel):

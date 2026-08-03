@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchTeamQueue, type QueueResponse } from "@/lib/api";
 import { useApiToken } from "@/hooks/useApiToken";
 import { QueueList } from "@/components/QueueList";
+import { SetupGate } from "@/components/SetupGate";
 
 export default function TeamQueuePage() {
   const { getToken, isLoaded, isSignedIn } = useApiToken();
@@ -22,13 +23,16 @@ export default function TeamQueuePage() {
     })();
   }, [getToken, isLoaded, isSignedIn]);
 
+  if (data?.setup_required) {
+    return <SetupGate title="Team Queue" />;
+  }
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl tracking-tight">Team Queue</h1>
         <p className="mt-2 max-w-xl text-[var(--muted)]">
-          Everyone’s shared pipeline, ranked by the firm score. Use Settings to
-          tune what shows up in My Queue for you.
+          Shared firm pipeline, ranked by the firm score.
         </p>
       </div>
 
@@ -40,7 +44,7 @@ export default function TeamQueuePage() {
 
       <QueueList
         items={data?.items ?? []}
-        emptyText="No scored companies yet. Add tracking areas in Settings — the pipeline fills this automatically."
+        emptyText="No scored companies in the shared pipeline yet."
       />
     </div>
   );

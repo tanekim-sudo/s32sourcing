@@ -79,8 +79,14 @@ def my_queue(
     partner: Partner = Depends(get_current_partner),
     db: Session = Depends(get_db),
 ) -> QueueResponse:
-    items = queue_service.my_queue(db, partner)
-    return QueueResponse(partner=_partner_out(partner), items=items, total=len(items))
+    setup_required = not queue_service.partner_has_tracking(db, partner)
+    items = [] if setup_required else queue_service.my_queue(db, partner)
+    return QueueResponse(
+        partner=_partner_out(partner),
+        items=items,
+        total=len(items),
+        setup_required=setup_required,
+    )
 
 
 @router.get("/queue/team", response_model=QueueResponse)
@@ -88,8 +94,14 @@ def team_queue(
     partner: Partner = Depends(get_current_partner),
     db: Session = Depends(get_db),
 ) -> QueueResponse:
-    items = queue_service.team_queue(db, partner)
-    return QueueResponse(partner=_partner_out(partner), items=items, total=len(items))
+    setup_required = not queue_service.partner_has_tracking(db, partner)
+    items = [] if setup_required else queue_service.team_queue(db, partner)
+    return QueueResponse(
+        partner=_partner_out(partner),
+        items=items,
+        total=len(items),
+        setup_required=setup_required,
+    )
 
 
 # ── Thesis ──────────────────────────────────────────────────────────────────

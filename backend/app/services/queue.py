@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import List, Optional, Set
 
 import yaml
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.schemas import QueueCompanyOut
@@ -29,7 +28,6 @@ def _active_base_weights(db: Session) -> tuple[Optional[str], dict]:
         .first()
     )
     if active is None:
-        # Fall back to repo YAML until DB is seeded
         path = REPO_ROOT / "rubric" / "rubric_base.v1.yaml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         weights = {k: float(v.get("weight", 0)) for k, v in (data.get("dimensions") or {}).items()}
@@ -40,16 +38,35 @@ def _active_base_weights(db: Session) -> tuple[Optional[str], dict]:
     return active.version, weights
 
 
-def _partner_thesis_ids(db: Session, partner: Partner) -> List[int]:
+def partner_has_tracking(db: Session, partner: Partner) -> bool:
+    """True only when the partner themselves configured areas or a watchlist."""
+    has_area = (
+        db.query(ThesisConfig.id)
+        .filter(
+            ThesisConfig.partner_id == partner.id,
+            ThesisConfig.is_active.is_(True),
+        )
+        .first()
+        is not None
+    )
+    if has_area:
+        return True
+    has_watch = (
+        db.query(WatchlistEntry.id)
+        .filter(WatchlistEntry.partner_id == partner.id)
+        .first()
+        is not None
+    )
+    return has_watch
+
+
+def _own_thesis_ids(db: Session, partner: Partner) -> List[int]:
+    """Only this partner's areas — never firm-wide defaults."""
     rows = (
         db.query(ThesisConfig.id)
         .filter(
+            ThesisConfig.partner_id == partner.id,
             ThesisConfig.is_active.is_(True),
-            or_(
-                ThesisConfig.partner_id == partner.id,
-                ThesisConfig.is_shared.is_(True),
-                ThesisConfig.partner_id.is_(None),
-            ),
         )
         .all()
     )
@@ -57,8 +74,11 @@ def _partner_thesis_ids(db: Session, partner: Partner) -> List[int]:
 
 
 def my_queue(db: Session, partner: Partner, limit: int = 50) -> List[QueueCompanyOut]:
-    """Team queue filtered to partner thesis/watchlist, ranked by overlay score."""
-    thesis_ids = _partner_thesis_ids(db, partner)
+    """Empty until the partner sets their own tracking areas or watchlist."""
+    if not partner_has_tracking(db, partner):
+        return []
+
+    thesis_ids = _own_thesis_ids(db, partner)
     watchlist_company_ids: Set[int] = {
         r[0]
         for r in db.query(WatchlistEntry.company_id)
@@ -66,7 +86,6 @@ def my_queue(db: Session, partner: Partner, limit: int = 50) -> List[QueueCompan
         .all()
     }
 
-    # Companies with signals matching partner/shared thesis configs
     thesis_company_ids: Set[int] = set()
     if thesis_ids:
         signals = db.query(Signal.company_id, Signal.matched_thesis_config_ids).filter(
@@ -135,7 +154,10 @@ def my_queue(db: Session, partner: Partner, limit: int = 50) -> List[QueueCompan
 
 
 def team_queue(db: Session, partner: Partner, limit: int = 50) -> List[QueueCompanyOut]:
-    """All scored companies ranked by shared base score."""
+    """Empty until the partner has configured tracking — no silent defaults."""
+    if not partner_has_tracking(db, partner):
+        return []
+
     base_version, _ = _active_base_weights(db)
     watchlist_company_ids = {
         r[0]
